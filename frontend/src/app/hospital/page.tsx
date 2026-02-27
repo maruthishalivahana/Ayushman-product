@@ -54,7 +54,7 @@ export default function HospitalDetails() {
       flag: "Unbundling",
       variant: "outline",
     },
-  ];
+  ] as const;
 
   return (
     <div className="min-h-screen bg-gray-50">

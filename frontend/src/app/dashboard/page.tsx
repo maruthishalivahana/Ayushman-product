@@ -1,5 +1,6 @@
 "use client";
 
+import { ChangeEvent, useRef, useState } from "react";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,7 +8,48 @@ import { Button } from "@/components/ui/button";
 import { UploadCloud, BarChart3, AlertTriangle, TrendingUp } from "lucide-react";
 import Sidebar from "@/components/sidebar";
 
+type ProcessModelResponse = {
+  success: boolean;
+  cleaned_data: {
+    Patient_ID: string | null;
+    Provider_ID: string | null;
+    Hospital_ID: string | null;
+    Claim_Amount: number | null;
+    Diagnosis_Code: string | null;
+    Procedure_Code: string | null;
+    Admission_Date: string | null;
+    Discharge_Date: string | null;
+    Length_of_Stay: number | null;
+    Admission_Type: string | null;
+    Deductible: number | null;
+    CoPay: number | null;
+  };
+  model_input: {
+    Claim_Amount: number;
+    Patient_Age: number;
+    Number_of_Procedures: number;
+    Length_of_Stay_Days: number;
+    Deductible_Amount: number;
+    CoPay_Amount: number;
+    Provider_Patient_Distance_Miles: number;
+    Claim_Submitted_Late: number;
+  };
+  fraud_result: {
+    is_fraudulent: boolean;
+    prediction: "TRUE" | "FALSE";
+    risk_score: number;
+    probability: number;
+  };
+  error?: string;
+};
+
 export default function Dashboard() {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [result, setResult] = useState<ProcessModelResponse | null>(null);
+
   // Metrics data
   const metricsData = [
     { label: "TOTAL CLAIMS ANALYZED", value: "1.2M", change: "+12%", positive: true },
@@ -49,6 +91,49 @@ export default function Dashboard() {
     { name: "Audit_Report_U2.jpg", date: "3 days ago", status: "ANOMALY DETECTED" },
     { name: "Rec_Bihar_302.pdf", date: "5 days ago", status: "VERIFIED" },
   ];
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null;
+    setSelectedFile(file);
+    setUploadError(null);
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile) {
+      setUploadError("Please select a PDF or image file first.");
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadError(null);
+    setResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("pdf", selectedFile);
+
+      const response = await fetch("/api/claims/process-model", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = (await response.json()) as ProcessModelResponse;
+
+      if (!response.ok) {
+        setUploadError(data?.error || "Upload failed while processing claim.");
+        return;
+      }
+
+      setResult(data);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("latestFraudAnalysis", JSON.stringify(data));
+      }
+    } catch (error: any) {
+      setUploadError(error?.message || "Unexpected upload error.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -207,7 +292,23 @@ export default function Dashboard() {
                   <UploadCloud className="w-12 h-12 mx-auto text-gray-400 mb-3" />
                   <p className="font-semibold text-gray-900 mb-1">Drag & Drop files here</p>
                   <p className="text-sm text-gray-600 mb-4">or click to browse from your computer</p>
-                  <Button variant="outline">Browse Files</Button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,image/*"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                  <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                    <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+                      Browse Files
+                    </Button>
+                    <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={handleUpload} disabled={isUploading}>
+                      {isUploading ? "Processing..." : "Analyze Claim"}
+                    </Button>
+                  </div>
+                  {selectedFile && <p className="text-xs text-gray-600 mt-3">Selected: {selectedFile.name}</p>}
+                  {uploadError && <p className="text-sm text-red-600 mt-3">{uploadError}</p>}
                 </div>
 
                 {/* Recent Uploads */}
@@ -225,6 +326,82 @@ export default function Dashboard() {
                     </div>
                   ))}
                 </div>
+
+                {result?.fraud_result && (
+                  <div className="mt-6 p-4 rounded-lg border border-gray-200 bg-white">
+                    <h3 className="font-semibold text-sm text-gray-900 mb-3">LATEST ANALYSIS RESULT</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                      <div className="p-3 bg-gray-50 rounded-md">
+                        <p className="text-xs text-gray-600">Fraud Flag</p>
+                        <p className={`font-bold ${result.fraud_result.is_fraudulent ? "text-red-600" : "text-green-600"}`}>
+                          {result.fraud_result.prediction}
+                        </p>
+                      </div>
+                      <div className="p-3 bg-gray-50 rounded-md">
+                        <p className="text-xs text-gray-600">Risk Score</p>
+                        <p className="font-bold text-gray-900">{result.fraud_result.risk_score}%</p>
+                      </div>
+                      <div className="p-3 bg-gray-50 rounded-md">
+                        <p className="text-xs text-gray-600">Patient ID</p>
+                        <p className="font-semibold text-gray-900">{result.cleaned_data?.Patient_ID || "N/A"}</p>
+                      </div>
+                      <div className="p-3 bg-gray-50 rounded-md">
+                        <p className="text-xs text-gray-600">Provider ID</p>
+                        <p className="font-semibold text-gray-900">{result.cleaned_data?.Provider_ID || "N/A"}</p>
+                      </div>
+                      <div className="p-3 bg-gray-50 rounded-md">
+                        <p className="text-xs text-gray-600">Hospital ID</p>
+                        <p className="font-semibold text-gray-900">{result.cleaned_data?.Hospital_ID || "N/A"}</p>
+                      </div>
+                      <div className="p-3 bg-gray-50 rounded-md">
+                        <p className="text-xs text-gray-600">Claim Amount</p>
+                        <p className="font-semibold text-gray-900">
+                          {typeof result.cleaned_data?.Claim_Amount === "number"
+                            ? result.cleaned_data.Claim_Amount.toLocaleString()
+                            : "N/A"}
+                        </p>
+                      </div>
+                      <div className="p-3 bg-gray-50 rounded-md">
+                        <p className="text-xs text-gray-600">Diagnosis Code</p>
+                        <p className="font-semibold text-gray-900">{result.cleaned_data?.Diagnosis_Code || "N/A"}</p>
+                      </div>
+                      <div className="p-3 bg-gray-50 rounded-md">
+                        <p className="text-xs text-gray-600">Procedure Code</p>
+                        <p className="font-semibold text-gray-900">{result.cleaned_data?.Procedure_Code || "N/A"}</p>
+                      </div>
+                      <div className="p-3 bg-gray-50 rounded-md">
+                        <p className="text-xs text-gray-600">Admission Date</p>
+                        <p className="font-semibold text-gray-900">{result.cleaned_data?.Admission_Date || "N/A"}</p>
+                      </div>
+                      <div className="p-3 bg-gray-50 rounded-md">
+                        <p className="text-xs text-gray-600">Discharge Date</p>
+                        <p className="font-semibold text-gray-900">{result.cleaned_data?.Discharge_Date || "N/A"}</p>
+                      </div>
+                      <div className="p-3 bg-gray-50 rounded-md">
+                        <p className="text-xs text-gray-600">Length of Stay</p>
+                        <p className="font-semibold text-gray-900">{result.cleaned_data?.Length_of_Stay ?? "N/A"}</p>
+                      </div>
+                      <div className="p-3 bg-gray-50 rounded-md">
+                        <p className="text-xs text-gray-600">Admission Type</p>
+                        <p className="font-semibold text-gray-900">{result.cleaned_data?.Admission_Type || "N/A"}</p>
+                      </div>
+                      <div className="p-3 bg-gray-50 rounded-md">
+                        <p className="text-xs text-gray-600">Deductible</p>
+                        <p className="font-semibold text-gray-900">{result.cleaned_data?.Deductible ?? "N/A"}</p>
+                      </div>
+                      <div className="p-3 bg-gray-50 rounded-md">
+                        <p className="text-xs text-gray-600">CoPay</p>
+                        <p className="font-semibold text-gray-900">{result.cleaned_data?.CoPay ?? "N/A"}</p>
+                      </div>
+                      <div className="p-3 bg-gray-50 rounded-md sm:col-span-2">
+                        <p className="text-xs text-gray-600 mb-1">Model Features Used</p>
+                        <p className="font-semibold text-gray-900">
+                          Claim_Amount: {result.model_input.Claim_Amount}, Patient_Age: {result.model_input.Patient_Age}, Number_of_Procedures: {result.model_input.Number_of_Procedures}, Length_of_Stay_Days: {result.model_input.Length_of_Stay_Days}, Deductible_Amount: {result.model_input.Deductible_Amount}, CoPay_Amount: {result.model_input.CoPay_Amount}, Provider_Patient_Distance_Miles: {result.model_input.Provider_Patient_Distance_Miles}, Claim_Submitted_Late: {result.model_input.Claim_Submitted_Late}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 

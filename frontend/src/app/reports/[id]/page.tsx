@@ -1,13 +1,52 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Download, Share2, Edit2, Pen, Hand, Search, Share } from "lucide-react";
 import Link from "next/link";
 
+type FraudAnalysisResult = {
+  success: boolean;
+  cleaned_data: {
+    Patient_ID: string | null;
+    Provider_ID: string | null;
+    Hospital_ID: string | null;
+    Claim_Amount: number | null;
+    Diagnosis_Code: string | null;
+    Procedure_Code: string | null;
+    Admission_Date: string | null;
+    Discharge_Date: string | null;
+    Length_of_Stay: number | null;
+    Admission_Type: string | null;
+    Deductible: number | null;
+    CoPay: number | null;
+  };
+  fraud_result: {
+    is_fraudulent: boolean;
+    prediction: "TRUE" | "FALSE";
+    risk_score: number;
+    probability: number;
+  };
+};
+
 export default function RiskAssessmentReport({ params }: { params: { id: string } }) {
   const resourceId = params.id;
+  const [latestResult, setLatestResult] = useState<FraudAnalysisResult | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("latestFraudAnalysis");
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as FraudAnalysisResult;
+      if (parsed?.fraud_result) {
+        setLatestResult(parsed);
+      }
+    } catch {
+      setLatestResult(null);
+    }
+  }, []);
   
   const hospitalData = {
     name: "City General Medical Center",
@@ -122,6 +161,57 @@ export default function RiskAssessmentReport({ params }: { params: { id: string 
             </div>
           </CardContent>
         </Card>
+
+        {latestResult && (
+          <Card className="mb-8 border-0 shadow-sm">
+            <CardHeader className="flex flex-row items-center gap-3 pb-3 border-b border-gray-200">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-indigo-600 rounded flex items-center justify-center text-white text-sm font-bold">
+                  ☑
+                </div>
+                <CardTitle className="text-lg">Latest Upload Result</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+                <div className="p-3 bg-gray-50 rounded-md">
+                  <p className="text-xs text-gray-600">Prediction</p>
+                  <p className={`font-bold ${latestResult.fraud_result.is_fraudulent ? "text-red-600" : "text-green-600"}`}>
+                    {latestResult.fraud_result.prediction}
+                  </p>
+                </div>
+                <div className="p-3 bg-gray-50 rounded-md">
+                  <p className="text-xs text-gray-600">Risk Score</p>
+                  <p className="font-bold text-gray-900">{latestResult.fraud_result.risk_score}%</p>
+                </div>
+                <div className="p-3 bg-gray-50 rounded-md">
+                  <p className="text-xs text-gray-600">Patient ID</p>
+                  <p className="font-semibold text-gray-900">{latestResult.cleaned_data.Patient_ID || "N/A"}</p>
+                </div>
+                <div className="p-3 bg-gray-50 rounded-md">
+                  <p className="text-xs text-gray-600">Claim Amount</p>
+                  <p className="font-semibold text-gray-900">{latestResult.cleaned_data.Claim_Amount ?? "N/A"}</p>
+                </div>
+                <div className="p-3 bg-gray-50 rounded-md">
+                  <p className="text-xs text-gray-600">Provider ID</p>
+                  <p className="font-semibold text-gray-900">{latestResult.cleaned_data.Provider_ID || "N/A"}</p>
+                </div>
+                <div className="p-3 bg-gray-50 rounded-md">
+                  <p className="text-xs text-gray-600">Hospital ID</p>
+                  <p className="font-semibold text-gray-900">{latestResult.cleaned_data.Hospital_ID || "N/A"}</p>
+                </div>
+                <div className="p-3 bg-gray-50 rounded-md">
+                  <p className="text-xs text-gray-600">Diagnosis</p>
+                  <p className="font-semibold text-gray-900">{latestResult.cleaned_data.Diagnosis_Code || "N/A"}</p>
+                </div>
+                <div className="p-3 bg-gray-50 rounded-md">
+                  <p className="text-xs text-gray-600">Procedure</p>
+                  <p className="font-semibold text-gray-900">{latestResult.cleaned_data.Procedure_Code || "N/A"}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Risk Score Summary */}
         <Card className="mb-8 border-0 shadow-sm">
